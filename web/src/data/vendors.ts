@@ -1,0 +1,28 @@
+import { supabase } from "../lib/supabaseClient";
+import { now, uid } from "../domain/format";
+import type { Vendor } from "../domain/types";
+
+export async function listVendors(companyId: string): Promise<Vendor[]> {
+  const { data, error } = await supabase.from("vendors").select("*").eq("company_id", companyId).order("canonical_name", { ascending: true });
+  if (error) throw error;
+  return (data || []) as Vendor[];
+}
+
+// Case-insensitive find-or-create by canonical name, so "THE HOME DEPOT
+// #0123" and "Home Depot" end up as one vendor.
+export async function findOrCreateVendor(companyId: string, canonicalName: string): Promise<Vendor> {
+  const trimmed = canonicalName.trim();
+  const { data: existing, error: findError } = await supabase
+    .from("vendors")
+    .select("*")
+    .eq("company_id", companyId)
+    .ilike("canonical_name", trimmed)
+    .maybeSingle();
+  if (findError) throw findError;
+  if (existing) return existing as Vendor;
+
+  const record = { id: uid("vendor"), company_id: companyId, canonical_name: trimmed, aliases: [], default_category: null, location: "", created_at: now() };
+  const { data, error } = await supabase.from("vendors").insert(record).select().single();
+  if (error) throw error;
+  return data as Vendor;
+}
